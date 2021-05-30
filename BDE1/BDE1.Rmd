@@ -1,0 +1,234 @@
+---
+title: "Big Data Econometrics"
+subtitle: "The 1st homework assignment"
+author: "mansok (2017042)"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::robobook:
+    highlight: kate
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+# libraries
+library(MASS)
+library(data.table)
+library(kableExtra)
+library(xtable)
+library(pander)
+library(plotly)
+# for I8.9 exercise
+library(ISLR)
+library(tree)
+library(ggplot2)
+
+panderOptions('knitr.auto.asis', FALSE)
+
+# load comments
+source("comments.R")
+source("functions.R")
+```
+
+# I3.15
+```{r dataprep1}
+dat <- as.data.table(Boston)
+```
+
+## General Information
+```{r general1}
+sapply(dat, summary) %>% 
+  t() %>% 
+  kable(caption = "General summary of Boston dataset variables") %>% 
+  kable_styling(position = "left", bootstrap_options = c("striped", "hover")) %>% 
+  column_spec(1, bold = T)
+```
+
+## (a) Simple linear regression for each variable
+```{r linear1, results='asis'}
+# run regression
+nm <- names(dat)[!grepl("crim", names(dat))]
+fit.simple <- lapply(nm, function(x) {lm(as.formula(paste0("crim ~ ", x)), data = dat)})
+
+# print lm summary, graphs
+invisible(lapply(fit.simple, mySummary))
+```
+
+`r i3.15.linear1_txt`
+
+## (b) Multiple regression with all the variables
+```{r mult, results='asis'}
+# run regression
+fit.all <- lm(crim ~ ., data = dat)
+mySummary(fit.all)
+```
+
+`r i3.15.mult_txt`
+
+## (c) (a) and (b) results comparison plot
+```{r comp.plt, results='asis'}
+x <- sapply(fit.simple, function(x) coefficients(x)[2])
+y <- coefficients(fit.all)[-1]
+df <- data.table(Variable = names(x),
+                 Simple = x,
+                 Multiple = y,
+                 `Absolute difference` = abs(x - y))
+
+fig <- plot_ly(df, x = ~Simple, y = ~Multiple, type = 'scatter', mode = 'markers',
+               hoverinfo = 'text',
+               text = ~paste('</br> Variable: ', Variable,
+                             '</br> Simple regression: ', round(Simple, 3),
+                             '</br> Multiple regression: ', round(Multiple, 3)))
+
+fig <- fig %>% layout(title = '(a) and (b) results comparison plot',
+                      xaxis = list(title = 'Simple regression for each variable'),
+                      yaxis = list(title = 'Multiple regression'))
+fig
+```
+<br>
+```{r comp.tbl, results='asis'}
+df[order(-`Absolute difference`)] %>% 
+  xtable() %>%
+  kable() %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+```
+
+`r i3.15.comp_txt`
+
+## (d) Cubic model
+```{r cubic, results='asis'}
+# run regression
+df.num <- Filter(function(x) {class(x) == "numeric"}, dat)
+nm.num <- names(df.num)[!grepl("crim", names(df.num))]
+fit.cubic <- lapply(nm.num, function(x) {lm(as.formula(paste0("crim ~ ", paste0("poly(", x, ",3)"))), data = df.num)})
+
+# print lm summary, graphs
+invisible(lapply(fit.cubic, mySummary))
+```
+
+`r i3.15.cubic_txt`
+
+# I6.7
+`r i6.7.general_txt`
+
+
+# I8.9
+
+## (a) Create train and test sets
+```{r a.tree}
+set.seed(1995)
+train_ind <- sample(nrow(OJ), 800)
+train <- as.data.table(OJ[train_ind, ])
+test <- as.data.table(OJ[-train_ind, ])
+```
+
+## (b) Fit a tree
+```{r b.tree}
+fit.tree = tree(Purchase ~ ., data = train)
+summary(fit.tree)
+```
+
+`r i8.9.b_txt`
+
+## (c) Tree info
+```{r c.tree}
+fit.tree
+```
+
+`r i8.9.c_txt`
+
+## (d) Tree plot
+```{r d.tree}
+plot(fit.tree, uniform = TRUE, main = "Classification Tree for Orange Juice Data Purchase")
+text(fit.tree, cex = 0.9)
+```
+
+`r i8.9.d_txt`
+
+## (e) Predictions
+```{r e.tree}
+pred <- predict(fit.tree, test, type = "class")
+conf.m <- caret::confusionMatrix(test$Purchase, pred)
+test.acc <- round(as.numeric(conf.m$overall[1]), 3)
+
+gg <- conf.m$table %>%
+  data.frame() %>% 
+  mutate(Prediction = factor(Prediction, levels = c("MM", "CH"))) %>%
+  group_by(Reference) %>% 
+  mutate(total = sum(Freq)) %>% 
+  ungroup() %>% 
+  ggplot(aes(Reference, Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), size = 8) +
+  scale_fill_gradient(low = "white", high = "#1a7ab1") +
+  scale_x_discrete(position = "top") +
+  geom_tile(color = "black", fill = "black", alpha = 0)
+
+gg
+```
+
+`r paste0("Accuracy on test set is: ", test.acc, ", then test error rate is: ", 1-test.acc, ".")`
+
+## (f) 
+```{r f.tree}
+set.seed(1)
+my.cv.tree <- cv.tree(fit.tree)
+```
+
+## (g) and (h)
+```{r g.tree}
+dd <- data.frame(size = my.cv.tree$size, dev = my.cv.tree$dev)
+
+fig <- plot_ly(dd, x = ~size, y = ~dev, type = 'scatter', mode = 'lines',
+               hoverinfo = 'text',
+               text = ~paste('</br> Tree Size: ', size,
+                             '</br> Deviance: ', round(dev, 3)))
+
+fig <- fig %>% layout(title = 'Tree size vs deviance',
+                      xaxis = list(title = 'Tree Size'),
+                      yaxis = list(title = 'Deviance'))
+fig
+```
+
+<br>
+`r i8.9.h_txt`
+
+## (i) 
+```{r i.tree}
+fit.pruned <- prune.tree(fit.tree, best = 6)
+plot(fit.pruned, uniform = TRUE, main = "Classification Tree for Orange Juice Data Purchase")
+text(fit.pruned, cex = 0.9)
+```
+
+## (j) 
+```{r j.tree}
+summary(fit.pruned)
+```
+
+`r i8.9.j_txt`
+
+## (k) 
+```{r k.tree1}
+pred.unpruned <- predict(fit.tree, test, type="class")
+err.unpruned <- round(sum(test$Purchase != pred.unpruned) / length(pred.unpruned), 3)
+
+pred.pruned = predict(fit.pruned, test, type="class")
+err.pruned <- round(sum(test$Purchase != pred.pruned) / length(pred.pruned), 3)
+```
+
+`r paste0("Full tree error rate for test data: ", err.unpruned, ".<br>",
+"Pruned tree error rate for test data: ", err.pruned, ".<br>",
+"Error rate for the pruned tree a little bit increased on the test data.")`
+
