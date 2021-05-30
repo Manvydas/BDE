@@ -1,0 +1,624 @@
+---
+title: "Big Data Econometrics"
+subtitle: "2nd homework assignment"
+author: "mansok (2017042)"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    highlight: tango
+    code_folding: hide
+    lightbox: true
+    gallery: true
+---
+
+```{r setup, include=FALSE}
+# I10.9, I4.13, I9.5
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+# libraries
+library(data.table)
+library(kableExtra)
+library(pander)
+library(plotly)
+
+library(ISLR)
+
+library(MASS)
+library(class)
+
+library(e1071)
+
+# for bonus tasks
+library(tm)
+library(pdftools)
+library(wordcloud)
+
+library(hdm)
+
+panderOptions('knitr.auto.asis', FALSE)
+
+# load comments
+source("comments.R")
+```
+
+
+
+# I10.9
+`r i10.9.description`
+
+```{r dataprep1}
+set.seed(1995)
+dat1 <- USArrests
+```
+
+## (a)
+```{r i10.9.a, results='asis'}
+fit.hclust <- hclust(dist(dat1), method = "complete")
+plot(fit.hclust, main = "States clusters")
+```
+
+`r i10.9.a`
+
+## (b)
+```{r i10.9.b_1, results='asis'}
+fit.hclust.c <- cutree(fit.hclust, 3)
+fit.hclust.c
+
+fit.hclust.c %>% 
+  table() %>% 
+  t() %>% 
+  # xtable() %>%
+  kable(caption = "Number of states in each cluster") %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+```
+
+`r i10.9.b`
+
+## (c)
+```{r i10.9.c, results='asis'}
+dat2 <- scale(dat1)
+fit.hclust.s <- hclust(dist(dat2), method = "complete")
+plot(fit.hclust.s)
+```
+
+`r i10.9.c`
+
+## (d)
+```{r i10.9.d_1, results='asis'}
+fit.hclust.s.c <- cutree(fit.hclust.s, 3)
+fit.hclust.s.c
+
+fit.hclust.s.c %>% 
+  table() %>% 
+  t() %>% 
+  # xtable() %>%
+  kable(caption = "Number of states in each cluster (scaled data)") %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+```
+
+```{r i10.9.d_3, results='asis'}
+dd <- table(fit.hclust.c, fit.hclust.s.c)
+rownames(dd) <- c("Non-scaled 1", "Non-scaled 2", "Non-scaled 3")
+colnames(dd) <- c("Scaled 1", "Scaled 2", "Scaled 3")
+dd %>% 
+  # xtable() %>%
+  kable(caption = "Model comparison on non-scaled vs scaled data") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = TRUE)
+```
+
+`r i10.9.d`
+
+
+
+# I4.13
+
+`r i4.13.description`
+
+## General information
+
+```{r i4.13_1, results='asis'}
+dat <- Boston
+setDT(dat)
+dat[ , crim.ind := fifelse(crim < median(crim), 0, 1)][ , crim := NULL]
+sapply(dat, summary) %>% 
+  t() %>% 
+  kable(caption = "General summary of Boston dataset variables") %>% 
+  kable_styling(position = "left", bootstrap_options = c("striped", "hover")) %>% 
+  column_spec(1, bold = T)
+```
+
+```{r i4.13_2, results='asis'}
+dat[ , .N, crim.ind] %>% 
+  kable(caption = "Crime rate comparison to median") %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+```
+
+## Create train and test sets
+```{r i4.13_3, results='asis'}
+set.seed(1995)
+train_ind <- sample(nrow(dat), nrow(dat)*0.7)
+train <- as.data.table(dat[train_ind, ])
+test <- as.data.table(dat[-train_ind, ])
+
+train[ , .N, crim.ind] %>% 
+  kable(caption = "Crime rate comparison to median (train set)") %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+
+test[ , .N, crim.ind] %>% 
+  kable(caption = "Crime rate comparison to median (test set)") %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+```
+
+## Logistic regression {.tabset}
+
+### All variables
+```{r i4.13_4, results='asis'}
+fit.glm <- glm(crim.ind ~ ., data = train, family = binomial)
+test$predict <- predict(fit.glm, test, type = "response")
+test[ , crim.p := fifelse(predict < 0.5, 0, 1)]
+
+table(test$crim.ind, test$crim.p) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(test$crim.p == test$crim.ind), 3) * 100
+err <- round(mean(test$crim.p != test$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+
+fit.glm %>% 
+  summary() %>%
+  pander()
+```
+
+### Excluding non significant variables
+```{r i4.13_5, results='asis'}
+fit.glm2 <- glm(crim.ind ~ . - indus - chas - rm - lstat, data = train, family = binomial)
+test$predict <- predict(fit.glm2, test, type = "response")
+test[ , crim.p := fifelse(predict < 0.5, 0, 1)]
+
+table(test$crim.ind, test$crim.p) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(test$crim.p == test$crim.ind), 3) * 100
+err <- round(mean(test$crim.p != test$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+
+fit.glm2 %>% 
+  summary() %>%
+  pander()
+```
+
+
+## LDA {.tabset}
+
+### All variables
+```{r i4.13_6, results='asis'}
+fit.lda <- lda(crim.ind ~ ., data = train)
+test$crim.p <- predict(fit.lda, test, type = "response")$class
+
+table(test$crim.ind, test$crim.p) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(test$crim.p == test$crim.ind), 3) * 100
+err <- round(mean(test$crim.p != test$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+
+fit.lda %>% 
+  summary() %>%
+  pander()
+```
+
+### Excluding some variables
+```{r i4.13_7, results='asis'}
+fit.lda2 <- lda(crim.ind ~ . - indus - chas - rm - lstat, data = train)
+test$crim.p <- predict(fit.lda2, test, type = "response")$class
+
+table(test$crim.ind, test$crim.p) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(test$crim.p == test$crim.ind), 3) * 100
+err <- round(mean(test$crim.p != test$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+
+fit.lda2 %>% 
+  summary() %>%
+  pander()
+```
+
+## KNN {.tabset}
+```{r i4.13_8, results='asis'}
+# select features
+nm <- which(!names(dat) %in%c("indus", "chas", "rm", "lstat"))
+dat.knn <- copy(dat[, nm, with = FALSE])
+
+# transform variables
+nm <- names(dat.knn)
+nm <- nm[!grepl("crim.ind", nm)]
+dat.knn[ , (nm) := lapply(.SD, scale), .SDcols = nm]
+
+# split train - test sets
+train.knn <- dat.knn[train_ind, ]
+test.knn <- dat.knn[-train_ind, ]
+
+```
+
+### K=1
+```{r i4.13_9, results='asis'}
+# KNN with K=1
+crim.p <- knn(train.knn[ , !"crim.ind"], test.knn[ , !"crim.ind"], train.knn[ , crim.ind], k = 1)
+table(test.knn[ , crim.ind], crim.p) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(crim.p == test.knn$crim.ind), 3) * 100
+err <- round(mean(crim.p != test.knn$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+```
+
+### K=3
+```{r i4.13_10, results='asis'}
+# KNN with K=3
+crim.p3 <- knn(train.knn[ , !"crim.ind"], test.knn[ , !"crim.ind"], train.knn[ , crim.ind], k = 3)
+table(test.knn[ , crim.ind], crim.p3) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(crim.p3 == test.knn$crim.ind), 3) * 100
+err <- round(mean(crim.p3 != test.knn$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+```
+
+### K=5
+```{r i4.13_11, results='asis'}
+# KNN with K=5
+crim.p5 <- knn(train.knn[ , !"crim.ind"], test.knn[ , !"crim.ind"], train.knn[ , crim.ind], k = 5)
+table(test.knn[ , crim.ind], crim.p5) %>% 
+  # xtable() %>%
+  kable(caption = "Actual vs predicted") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+
+acc <- round(mean(crim.p5 == test.knn$crim.ind), 3) * 100
+err <- round(mean(crim.p5 != test.knn$crim.ind), 3) * 100
+cat("Test accuracy:", acc, "%; \n",
+    "Test error rate:", err, "% \n")
+```
+
+`r i4.13.final`
+
+# I9.5
+
+`r i9.5.description`
+
+## (a)
+```{r i9.5.a, results='asis'}
+set.seed(1995)
+x1 <- runif(500) - 0.5
+x2 <- runif(500) - 0.5
+y <- 1 * (x1^2 - x2^2 > 0)
+```
+
+## (b)
+```{r i9.5.b, results='asis'}
+dat9 <- data.table(as.factor(y), x1, x2)
+# plot_ly(dd, x=~x1) %>% add_markers(y = ~x2, showlegend = FALSE)
+
+
+fig <- plot_ly(dat9, x = ~x1, y = ~x2, color = ~y, symbol = ~y,
+               type = 'scatter', mode = 'markers', hoverinfo = 'text',
+               marker = list(size = 7),
+               text = ~paste('</br> Y class: ', y,
+                             '</br> X1: ', round(x1, 3),
+                             '</br> X2: ', round(x2, 3)))
+
+fig <- fig %>% layout(title = 'X1 vs X2',
+                      xaxis = list(title = 'X1'),
+                      yaxis = list(title = 'X2'))
+fig
+```
+
+## (c)
+```{r i9.5.c, results='asis'}
+fit.glm9 <- glm(y ~ x1 + x2, family = binomial)
+fit.glm9 %>% 
+  summary()  %>%
+  pander()
+```
+
+## (d)
+```{r i9.5.d, results='asis'}
+dat9$predict <- predict(fit.glm9, dat9, type = "response")
+dat9[ , y.p := fifelse(predict < 0.5, 0, 1)]
+
+fig <- plot_ly(dat9, x = ~x1, y = ~x2, color = ~y.p, symbol = ~y.p,
+               type = 'scatter', mode = 'markers', hoverinfo = 'text',
+               marker = list(size = 7),
+               text = ~paste('</br> Real: ', y,
+                             '</br> Predicted: ', y.p,
+                             '</br> X1: ', round(x1, 3),
+                             '</br> X2: ', round(x2, 3)))
+
+fig <- fig %>% layout(title = 'Logistic regression results',
+                      xaxis = list(title = 'X1'),
+                      yaxis = list(title = 'X2'))
+fig
+```
+
+## (e)
+```{r i9.5.e, results='asis'}
+fit.glm92 <- glm(y ~ x1 + x2 + I(x1^2) + I(x2^2) + I(x1 * x2), data = dat9, family = binomial)
+fit.glm92 %>% 
+  summary()  %>%
+  pander()
+```
+
+## (f)
+```{r i9.5.f, results='asis'}
+dat9$predict2 <- predict(fit.glm92, dat9, type = "response")
+dat9[ , y.p2 := fifelse(predict2 < 0.5, 0, 1)]
+
+fig <- plot_ly(dat9, x = ~x1, y = ~x2, color = ~y.p2, symbol = ~y.p2,
+               type = 'scatter', mode = 'markers', hoverinfo = 'text',
+               marker = list(size = 7),
+               text = ~paste('</br> Real: ', y,
+                             '</br> Predicted: ', y.p2,
+                             '</br> X1: ', round(x1, 3),
+                             '</br> X2: ', round(x2, 3)))
+
+fig <- fig %>% layout(title = 'Logistic regression results',
+                      xaxis = list(title = 'X1'),
+                      yaxis = list(title = 'X2'))
+fig
+```
+
+## (g)
+```{r i9.5.g, results='asis'}
+fit.svm <- svm(as.factor(y) ~ x1 + x2, dat9, kernel = "linear", cost = 0.01)
+dat9$y.p3 <- predict(fit.svm, dat9, type = "response")
+
+fig <- plot_ly(dat9, x = ~x1, y = ~x2, color = ~y.p3, symbol = ~y.p3,
+               type = 'scatter', mode = 'markers', hoverinfo = 'text',
+               marker = list(size = 7),
+               text = ~paste('</br> Real: ', y,
+                             '</br> Predicted: ', y.p3,
+                             '</br> X1: ', round(x1, 3),
+                             '</br> X2: ', round(x2, 3)))
+
+fig <- fig %>% layout(title = 'SVM results',
+                      xaxis = list(title = 'X1'),
+                      yaxis = list(title = 'X2'))
+fig
+```
+
+## (h)
+```{r i9.5.h, results='asis'}
+fit.svm2 = svm(as.factor(y) ~ x1 + x2, dat9, gamma = 1)
+dat9$y.p4 <- predict(fit.svm2, dat9, type = "response")
+
+fig <- plot_ly(dat9, x = ~x1, y = ~x2, color = ~y.p4, symbol = ~y.p4,
+               type = 'scatter', mode = 'markers', hoverinfo = 'text',
+               marker = list(size = 7),
+               text = ~paste('</br> Real: ', y,
+                             '</br> Predicted: ', y.p4,
+                             '</br> X1: ', round(x1, 3),
+                             '</br> X2: ', round(x2, 3)))
+
+fig <- fig %>% layout(title = 'SVM results',
+                      xaxis = list(title = 'X1'),
+                      yaxis = list(title = 'X2'))
+fig
+```
+
+
+# Bonus Tasks
+
+## 1. Text document analysis {.tabset}
+
+`r bonus1.description`
+
+### Words frequency
+```{r bonus1.1, results='asis'}
+dat.pdf <- Corpus(URISource("straipsnis.pdf"),
+                  readerControl = list(reader = readPDF))
+
+dtm <- TermDocumentMatrix(dat.pdf,
+                          control = 
+                            list(removePunctuation = TRUE,
+                                 stopwords = TRUE,
+                                 tolower = TRUE,
+                                 stemming = TRUE,
+                                 removeNumbers = TRUE,
+                                 bounds = list(global = c(1, Inf)))) 
+
+mm <- as.matrix(dtm)
+ww <- sort(rowSums(mm), decreasing = TRUE)
+dd <- data.frame(word = names(ww), freq = ww)
+
+head(dd, 10) %>% 
+  kable(caption = "10 most popular words") %>%
+  kable_styling(position = "left", bootstrap_options = "hover")
+```
+
+### Words frequency plot
+```{r bonus1.2, results='asis'}
+set.seed(1995)
+wordcloud(words = dd$word, freq = dd$freq, min.freq = 5,
+          max.words = 200, random.order = FALSE, rot.per = 0.35, 
+          colors = brewer.pal(8, "Dark2")
+)
+```
+
+`r bonus1.paper`
+
+### Words frequency plot by section
+```{r bonus1.3, results='asis'}
+dat.pdf.c <- VCorpus(VectorSource(pdf_text("straipsnis.pdf")))
+
+dtm.c <- TermDocumentMatrix(dat.pdf.c, 
+                            control = 
+                              list(removePunctuation = TRUE,
+                                   stopwomm2rds = TRUE,
+                                   tolower = TRUE,
+                                   stemming = TRUE,
+                                   removeNumbers = TRUE,
+                                   bounds = list(global = c(1, Inf))))
+
+mm2 <- as.matrix(dtm.c)
+
+for(i in 1:(ncol(mm2))){
+  stat <- mm2[,i]
+  v <- sort(stat,decreasing=TRUE)
+  d <- data.frame(word = names(v), freq = v)
+  
+  wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+            max.words = 20, random.order = FALSE, rot.per = 0.35, 
+            colors = brewer.pal(8, "Dark2"))
+}
+```
+
+`r bonus1.sub`
+
+## 2. Barro-Lee example {.tabset}
+
+`r bonus2.description`
+
+### Dropping 20 countries
+```{r bonus2.1, results='asis'}
+set.seed(19950330)
+
+dat.b <- GrowthData
+setDT(dat.b)
+drop.ind <- sample(1:(nrow(dat.b)), 20)
+dat.b <- dat.b[!drop.ind, ]
+
+dim.b <- dim(dat.b)
+cat("Data dimensions after dropping 20 countries: rows:", dim.b[1], "; columns:", dim.b[2], ". \n")
+```
+
+```{r bonus2.2, results='asis'}
+# from vignette
+y <- dat.b[, 1, drop = F]
+d <- dat.b[, 3, drop = F]
+X <- as.matrix(dat.b)[, -c(1, 2, 3)]
+varnames <- colnames(dat.b)
+
+# OLS:
+xnames <- varnames[-c(1, 2, 3)] 
+dandxnames <- varnames[-c(1, 2)] 
+
+# create formulas by pasting names (this saves typing times)
+fmla <- as.formula(paste("Outcome ~ ", paste(dandxnames, collapse = "+")))
+ls.effect <- lm(fmla, data = dat.b)
+
+# effect by the partialling out by Post-Lasso:
+lasso.effect <- rlassoEffect(x = X, y = y, d = d, method = "partialling out")
+summary(lasso.effect)
+```
+
+```{r bonus2.3, results='asis'}
+# double selection:
+doublesel.effect <- rlassoEffect(x = X, y = y, d = d, method = "double selection")
+summary(doublesel.effect)
+```
+
+```{r bonus2.4, results='asis'}
+table <- rbind(summary(ls.effect)$coef["gdpsh465", 1:2], 
+               summary(lasso.effect)$coef[, 1:2],
+               summary(doublesel.effect)$coef[, 1:2])
+colnames(table) <- c("Estimate", "Std. Error")
+rownames(table) <- c("OLS",
+                     "Post-Lasso ",
+                     "Double selection")
+
+table %>% 
+  # xtable(digits=c(2, 2,5))%>% 
+  # xtable() %>%
+  kable(caption = "Models comparison") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+```
+
+
+### Full dataset
+```{r bonus2.5, results='asis'}
+dat.b.f <- GrowthData
+setDT(dat.b.f)
+
+dim.b.f <- dim(dat.b.f)
+cat("Full dataset dimensions: rows:", dim.b.f[1], "; columns:", dim.b.f[2], ". \n")
+```
+
+```{r bonus2.6, results='asis'}
+# from vignette
+y <- dat.b.f[, 1, drop = F]
+d <- dat.b.f[, 3, drop = F]
+X <- as.matrix(dat.b.f)[, -c(1, 2, 3)]
+varnames <- colnames(dat.b.f)
+
+# OLS:
+xnames <- varnames[-c(1, 2, 3)] 
+dandxnames <- varnames[-c(1, 2)] 
+
+# create formulas by pasting names (this saves typing times)
+fmla <- as.formula(paste("Outcome ~ ", paste(dandxnames, collapse = "+")))
+ls.effect <- lm(fmla, data = dat.b.f)
+
+# effect by the partialling out by Post-Lasso:
+lasso.effect <- rlassoEffect(x = X, y = y, d = d, method = "partialling out")
+summary(lasso.effect)
+```
+
+```{r bonus2.7, results='asis'}
+# double selection:
+doublesel.effect <- rlassoEffect(x = X, y = y, d = d, method = "double selection")
+summary(doublesel.effect)
+```
+
+```{r bonus2.8, results='asis'}
+table <- rbind(summary(ls.effect)$coef["gdpsh465", 1:2], 
+               summary(lasso.effect)$coef[, 1:2],
+               summary(doublesel.effect)$coef[, 1:2])
+colnames(table) <- c("Estimate", "Std. Error")
+rownames(table) <- c("OLS",
+                     "Post-Lasso ",
+                     "Double selection")
+
+table %>% 
+  kable(caption = "Models comparison") %>%
+  kable_styling(position = "left", bootstrap_options = "hover") %>% 
+  column_spec(1, bold = T)
+```
